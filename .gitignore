@@ -1,4 +1,15 @@
-**/build/
+# --- WADs / WHDs (never tracked) ---------------------------------------------
+*.wad
+*.WAD
+*.whd
+*.whx
+
+# --- build outputs ------------------------------------------------------------
+/build/
+build-host/
+**/build/core/
+**/build/fw/
+**/build/convert/
 *.bin
 *.elf
 *.map
@@ -6,5 +17,25 @@
 *.d
 *.su
 *.lst
-.DS_Store
+*.out
+
+# --- crispy doom / local clones -----------------------------------------------
+crispy-doom
+examples/
+
+# --- python / editors ---------------------------------------------------------
 __pycache__/
+*.pyc
+.DS_Store
+*.sw[a-p]
+*~
+.*.un~
+.netrwhist
+\#*\#
+.\#*
+*.autosave
+tags
+TAGS
+.gdb_history
+.vscode/
+.idea/

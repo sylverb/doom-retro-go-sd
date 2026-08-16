@@ -1,2 +1,6 @@
-# Needed by sdk/tools/pack_core.py when packaging --pad-logo / --header-logo images.
+# Packaging (sdk/tools/pack_core.py logos) + optional flash/debug helpers.
 pillow
+# Optional: flashing & SWD (test-firmware flow)
+# gnwmanager
+# pyelftools
+# littlefs-python

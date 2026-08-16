@@ -1,0 +1,53 @@
+# gnw-doom — Doom CORE for Game & Watch Retro-Go SD
+#
+#   make              # /cores/doom.bin (full engine, multi-WHD)
+#   make convert WAD=foo.wad [OUT=foo.whd]
+#                     # host WAD→WHD (-no-super-tiny); copy to /roms/doom/
+#   make docker       # same build inside the published builder image
+#   make clean
+#
+# Runtime: launcher lists /roms/doom/*.whd; ACTIVE_FILE selects the WHD.
+# Optional toolkit flash/qemu targets remain for developers.
+
+WAD ?= $(if $(wildcard doom1.wad),doom1.wad,doom1-shareware.wad)
+OUT ?= $(basename $(notdir $(WAD))).whd
+
+# Always build the full (non–super-tiny) engine so one core runs any IWAD WHD.
+CORE_VARIANT := core
+TRACE ?= 0
+
+EXTFLASH_OFFSET_MB ?= 20
+
+# Quiet by default; show full commands with: make V=
+V ?= @
+ECHO ?= echo
+
+.PHONY: all doom core convert build-firmware flash flash-firmware flash-doom \
+        start-app flash-dummy clean extflash-image qemu
+all: core
+doom: core
+
+build-firmware: build/firmware.bin
+
+flash: flash-firmware flash-doom
+
+flash-firmware: build/firmware.bin
+	gnwmanager flash bank$(INTFLASH_BANK) --file build/firmware.bin
+
+flash-doom: $(OUTBIN)
+	gnwmanager flash ext $(OUTBIN) --offset $(EXTFLASH_OFFSET_ALIGNED)
+
+extflash-image: $(OUTBIN)
+	./scripts/build/make_extflash_image.py --bin $(OUTBIN) --whd $(OUTWHD)
+
+qemu:
+	./scripts/debug/run_qemu.sh
+
+start-app:
+	gnwmanager start bank$(INTFLASH_BANK)
+
+flash-dummy: dummy.bin
+	st-flash --reset write dummy.bin 0x8000000
+
+clean:
+	rm -rf build/* build-host doom.bin

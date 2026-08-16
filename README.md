@@ -1,167 +1,167 @@
-# Retro-Go SD Core / Homebrew Template
+# gnw-doom
 
-Standalone SDK and starter project for building **one** external emulator
-core **or** **one** GWHB homebrew for
-[Game & Watch Retro-Go SD](https://github.com/sylverb/game-and-watch-retro-go-sd).
+A [retro-go-sd](https://github.com/sylverb/game-and-watch-retro-go-sd) **CORE**
+for DOOM I & II on the Nintendo Game & Watch (STM32H7B0), based on
+[rp2040-doom](https://github.com/kilograham/rp2040-doom) /
+[Chocolate Doom](https://github.com/chocolate-doom/chocolate-doom).
 
-This repository is the project: clone or copy it, set `PROJECT_KIND`, customize
-`src/main.c` / pack metadata, and ship a single `.bin`. Do not put several
-emulators or homebrews in the same tree.
+The Game & Watch port was done by **/proc**; the original work lives in
+[slash-proc/gnw-doom](https://github.com/slash-proc/gnw-doom). This repository
+is that port packaged as a **standalone Retro-Go SD dynamic core** (vendored
+ABI/SDK under `sdk/`, G&W platform code in `src/gnw/`, engine in the
+`rp2040-doom/` submodule).
 
-Both kinds share the same freestanding Cortex-M7 build (linked into
-`RAM_EMU`, talking to the launcher **only** through `gw_firmware_abi_t`).
-They differ in packaging and SD layout:
+Originally based on [rota1001/stm32h7-baremetal-doom](https://github.com/rota1001/stm32h7-baremetal-doom)
+and [doomgeneric](https://github.com/ozkl/doomgeneric) (see the `doomgeneric`
+branch), later pivoted to rp2040-doom for its BSP-level loading and in-place
+compression — yielding an XIP-able, compressed binary on flash.
 
+One full CORE (`/cores/doom.bin`) loads any `/roms/doom/*.whd` selected by the
+launcher (`ACTIVE_FILE`). Requires firmware ABI **v2**. Header logo by
+[eduardofilo](https://github.com/eduardofilo).
 
-| | Dynamic core (`PROJECT_KIND=core`) | Homebrew (`PROJECT_KIND=homebrew`) |
-|--|-----------------------------------|-------------------------------------|
-| Packer | `sdk/tools/pack_core.py` (`CORE`) | `sdk/tools/pack_homebrew.py` (`GWHB`) |
-| SD path | `/cores/<name>.bin` | `/roms/homebrew/<name>.bin` |
-| Launcher | New system tab (dirname + extensions) | Homebrew tab |
-| Assets | Pad/header 1bpp logos (`src/assets/`) | Optional JPEG cover (≤186×100, ≤10 KiB) |
-| `src/main.c` | Loads the ROM given by the launcher | No ROM — `ACTIVE_FILE` is this `.bin` |
+## Building
 
-Headers, bridge trampolines, linker scripts, and packers are vendored under
-`sdk/`. You do **not** need a firmware checkout to compile.
+Prerequisites:
 
-## Requirements
-
-**Local build**
-
-- `arm-none-eabi-gcc` (v10+, same family as the firmware; hard-float
-  `fpv5-d16` is mandatory — ABI calling convention must match)
-- GNU Make
-- Python 3 + Pillow (`pip install -r requirements.txt`) for packaging
-  logos / homebrew covers from PNG/BMP/JPEG
-
-**Docker build** (no host toolchain)
-
-- Docker
-- Image [`sylverb/retro-go-sd-builder`](https://hub.docker.com/r/sylverb/retro-go-sd-builder)
-  (same tag as the firmware repo, default `v1.5`)
-
-## Quick start
-
-Local (default = core):
-
-```bash
-make
-# or: make PROJECT_KIND=homebrew
-```
-
-Docker:
-
-```bash
-make docker
-make docker PROJECT_KIND=homebrew
-```
-
-Override the image tag if needed: `make docker RELEASE_VERSION=v1.5`.
-
-Produces:
-
-- **core:** `example.bin` → `/cores/example.bin`, test ROMs under `/roms/example/`
-- **homebrew:** `ExampleHB.bin` → `/roms/homebrew/ExampleHB.bin`
-  (optional override cover: `/covers/homebrew/ExampleHB.img`)
-
-The skeleton draws a framebuffer with the ROM / file name, beeps a square
-wave while a gameplay button is held, and wires save/load state, screenshot,
-sleep wake-up, and SRAM hooks via `odroid_system_emu_init`. Replace the stubs
-in `src/main.c` with your emulator or game.
-
-Useful Docker targets:
-
-- `make docker` — build + pack in the local builder image
-- `make docker_pull` — refresh the image from Docker Hub
-- `make docker_shell` — interactive shell in the same mount
-
-## Create your own core
-
-1. Keep `PROJECT_KIND=core` (the default).
-2. Edit the top of `Makefile`: `CORE_NAME`, `CORE_ENTRY`, `CORE_C_SOURCES`,
-   and the `pack_core.py` metadata (`--system-name`, `--dirname`,
-   `--extensions`, …).
-3. Drop footer graphics in `src/assets/` and point `--pad-logo` / `--header-logo`
-   at PNG or BMP files. Dark/opaque pixels become the lit 1bpp bits.
-   Optional: `--logo-width` / `--logo-height` / `--logo-invert`.
-4. If the core supports cheat files on the SD card, set `--cheat-ext`
-   (`ggcodes`, `pceplus`, or `mcf`). Leave empty when unsupported.
-5. Implement the loop in `src/main.c` (entry is `app_main` by default).
-6. `make` → drop the `.bin` under `/cores/`.
-
-## Create your own homebrew
-
-1. Build with `PROJECT_KIND=homebrew`.
-2. Edit `Makefile`: `CORE_NAME`, pack `--name` / `--version` / `--cover` /
-   `--out`. You can drop the core-only pack recipe and `PROJECT_KIND_CORE`
-   branches once you no longer need them.
-3. Cover JPEG must decode ≤ **186×100** and be ≤ **10 KiB**. An on-disk
-   `/covers/homebrew/<stem>.img` **overrides** the embedded cover.
-4. Large assets that do not fit in RAM_EMU stay as **sibling files** under
-   `/roms/homebrew/` and are opened via the ABI.
-5. `make PROJECT_KIND=homebrew` → drop the `.bin` (and sidecars) under
-   `/roms/homebrew/`.
-
-Include order in `src/main.c`:
-
-```c
-#include "common.h"
-#include "odroid_system.h"
-/* … other firmware-style headers … */
-#include "gw_core_bridge.h"   /* last — rewrites ACTIVE_FILE / ram_start */
-```
-
-Undefined references at link time usually mean a symbol is missing from
-`sdk/src/gw_core_bridge_redefine_syms.txt` and/or lacks a `core_*` trampoline
-in `sdk/src/gw_core_bridge.c`. If the symbol is not on the ABI yet, extend
-the **firmware** ABI first, then refresh this SDK (see below).
-
-## Layout
+- `arm-none-eabi-gcc` (a recent Arm GNU toolchain; hard-float `fpv5-d16`)
+- host `gcc`/`g++` (builds `whd_gen`, the WAD→WHD converter)
+- `python3` + Pillow (`pip install -r requirements.txt`)
+- `git submodule update --init rp2040-doom`
 
 ```
-Makefile            Project build + pack + docker (PROJECT_KIND=core|homebrew)
-src/                Project sources (main.c) and core logos (assets/)
-sdk/
-  include/          Vendored headers (ABI, odroid, CMSIS/HAL, FatFs, gwhb.h, …)
-  src/              Bridge, entry trampoline, i18n, redefine-syms map
-  ld/               RAM_EMU linker scripts (must match firmware);
-                    start with ld/core_ram_emu.ld
-  tools/            pack_core.py, pack_homebrew.py
-  Makefile          Shared compile/link rules (included by the root Makefile)
-scripts/            Sync helper
+make                  # → doom.bin (full engine CORE; drop under /cores/)
+make convert WAD=doom1.wad OUT=doom1.whd   # host WAD→WHD (-no-super-tiny)
+# copy *.whd to /roms/doom/ on the SD card
+
+make docker           # same build inside sylverb/retro-go-sd-builder (no host toolchain)
 ```
 
-## ABI compatibility
+Optional toolkit flash/qemu targets remain for developers (`make build-firmware`,
+`make flash`, …) and need the optional `retro-go-porting-toolkit` submodule.
 
-Cores and homebrews embed `required_abi_version` and `required_abi_min_size`
-(from `GW_CORE_BUILT_ABI_*` in the bridge). The firmware refuses to load a
-binary that asks for a newer/larger ABI than it provides.
+## WAD files
 
-See `SDK_VERSION` for the snapshot this tree was cut from. After a released
-ABI:
+Convert IWADs **on a host PC** (never on-device). Every WHD is built with
+`-no-super-tiny` so one full CORE can open shareware, Ultimate, and DOOM II.
 
-- **Append** a new function pointer at the end of `gw_firmware_abi_t` →
-  usually no version bump; `required_abi_min_size` grows.
-- **Change a ctl signature** or remove/reorder fields → bump
-  `GW_FIRMWARE_ABI_VERSION`.
-- **Add a new ctl op** without changing the C signature → bump version (or
-  another capability flag) so binaries that need the op can require it.
+- `doom1-shareware.wad` / `doom1.wad` / `doom2.wad` (gitignored): place IWADs
+  here locally. Unity re-release WADs are cropped automatically at conversion
+  time.
 
-While developing against unreleased firmware you may rebuild firmware +
-binaries together without bumping.
+Copy the resulting `.whd` files to `/roms/doom/` on the SD card.
 
-## Refreshing the SDK from firmware
+## Memory map (RAM-overlay model)
 
-If you maintain this tree alongside a firmware checkout:
+The payload is a retro-go homebrew overlay: the launcher copies `doom.bin` to
+`__RAM_EMU_START__` and jumps to the `GWHB` stage-1, which unpacks every
+segment to its final address — **no code executes from external flash and
+nothing is relocated**. The WHD game data is a separate file mapped at runtime
+through the firmware ABI. Numbers below are the Ultimate DOOM build (doom2 is
+identical apart from the WHD). Tunables (all linker-`ASSERT`ed): the ITCM/DTCM
+object lists in `linker.ld`, `PATCH_CACHE_BYTES` and `TEXT_AXIS_ORIGIN`.
 
-```bash
-./scripts/sync_from_firmware.sh /path/to/game-and-watch-retro-go-sd
+```
+══════════════════ ITCM 64K @ 0x00000000 — zero-wait code ══════════════════
+0x00000000 ┌────────────────────────────────────────────┐
+           │ (256 B reserved: optional fw null-guard)    │
+0x00000100 ├────────────────────────────────────────────┤
+           │ .itcram_hot                       58.6K     │  hot-fn list +
+           │   R_Render*, pd_render, p_map,              │  pd_render/p_map/
+           │   p_enemy, p_sight, p_maputl                │  p_enemy/p_sight…
+0x0000EB40 ├────────────────────────────────────────────┤
+           │ free                               5.2K     │  ← ITCM headroom
+0x00010000 └────────────────────────────────────────────┘
+
+══════════════ DTCM 128K @ 0x20000000 — FIRMWARE-OWNED, doom: 0 ═════════════
+0x20000000 ┌────────────────────────────────────────────┐
+           │ fw .data + .bss                  ~16.6K     │  logbuf, HAL state…
+0x200040C0 ├────────────────────────────────────────────┤
+           │ fw malloc heap                      85K     │  FatFS/LFS/dialogs;
+           │                                             │  (apps: dtcm_malloc)
+0x200194C0 ├────────────────────────────────────────────┤
+           │ padding / redzone (256 B)         ~6.9K     │  MPU region 2 guard
+0x2001B000 ├────────────────────────────────────────────┤
+           │ fw stack (doom runs on it)          20K     │  SP ↓ from 0x2001FFF0
+0x20020000 └────────────────────────────────────────────┘
+
+═══════════ AXISRAM 1M @ 0x24000000 — app territory after launch ════════════
+0x24000000 ┌────────────────────────────────────────────┐
+           │ LUT8 framebuffers  2 × 75K         150K     │  UNCACHED (fw MPU
+           │ (+4K LTDC slack to 0x26800)                 │  regions 3–6)
+0x24028000 ├────────────────────────────────────────────┤
+           │ .pcache  patch/texture cache       140K     │  was 320K; perf knob
+0x2404B000 ├────────────────────────────────────────────┤ ← __RAM_EMU_START__
+           │ .gwhb  GWHB magic + stage-1       0.3K      │  image loads here,
+           │ .bss   (overlaps consumed image)   288K     │  bss zeroed after
+0x2409354C ├────────────────────────────────────────────┤  segments copied out
+           │ zone heap (z_zone)               203.4K     │  obs. peak ~210K
+0x240C5000 ├────────────────────────────────────────────┤ ← TEXT_AXIS_ORIGIN
+           │ .text_axis  cold code + rodata   229.3K     │  (6.8K slack)
+0x24100000 └────────────────────────────────────────────┘
+
+═══════ AHBRAM 128K @ 0x30000000 — D2 SRAM, doom's "fast data" tier ═════════
+0x30000000 ┌────────────────────────────────────────────┐
+           │ fw audio DMA ring + .ahb head     ~6.4K     │  UNCACHED (fw rgn 0;
+           │ (rest of 16K subregion unused)              │  doom rgn 7 skips it)
+0x30004000 ├────────────────────────────────────────────┤ ← doom MPU region 7:
+           │ .dtcm_bss  render scratch          80.1K    │   cacheable WBWA
+0x30018064 │ .data      initialized globals      2.5K    │   (survives the fw's
+0x30018A68 │ .text_dtcm warm code tier          19.6K    │   LUT8 MPU rewrite)
+0x3001D8D8 ├────────────────────────────────────────────┤
+           │ free                                9.9K    │
+0x30020000 └────────────────────────────────────────────┘
+
+═════════════════ External flash (XIP @ 0x90000000) ═════════════════════════
+  Real retro-go (SD_CARD=0 example, 64M chip):
+    FrogFS @ +0      (roms/bios/covers; doom.bin 317K, doom.whd 6.9M,
+                      doom2.whd 7.9M) · littlefs @ +54M (10M)
+  Test firmware:     doom.bin @ EXTFLASH_OFFSET · <name>.whd @ +768K
+
+  intflash: retro-go firmware · ABI table @ VTOR+0x400 (gw_firmware_abi_t)
+  Image file = 317K (gwhb+itcm+data+text_dtcm+text_axis LMAs chained at
+  0x2404B000); stage-1 unpacks ITCM/AHB/AXITEXT, then .bss zeroing retires it.
 ```
 
-That re-copies headers (including `gwhb.h`), bridge sources, linker scripts,
-`pack_core.py`, and `pack_homebrew.py`. Review the diff before committing.
+## Repo structure (for devs)
+
+```
+Makefile.common      user-facing stages & variables (start here)
+Makefile             build machinery: WAD classification, engine/platform
+                     compile rules, whd_gen host build, dual-link reloc,
+                     test-firmware build, gnwmanager flash targets
+config.h             stand-in for rp2040-doom's CMake-generated config.h
+linker.ld            payload linker script (XIP from extflash, ITCM hot set,
+                     .reloc_hdr at image offset 0)
+src/gnw/             the G&W platform layer: video/sound/input/timer/system
+                     backends, ABI binding (rg_abi.h, abi_stubs.c, rg_data.h),
+                     perf overlay, persistence, relocation header, fast mem,
+                     pico-SDK compat shims (compat/)
+scripts/build/       wad_plan.py (sha1 IWAD classifier), wadwide.py (Unity
+                     widescreen crop), gen_reloc_table.py (dual-link diff ->
+                     relocation table appended to the blob)
+scripts/debug/       doom-specific SWD tools: tracepull.py (TRACE=1 pipeline
+                     timing), screenshot.py (framebuffer+CLUT dump)
+rp2040-doom/         the engine (submodule): fork branch gnw-stm32h7b0 =
+                     upstream rp2 + one minimal engine-hooks commit (~22 files)
+retro-go-porting-toolkit/
+                     the test firmware (submodule, update=none): minimal
+                     retro-go API surface published as an ABI table at
+                     VTOR+0x400; owns deps/ (ST HAL, CMSIS, littlefs) and the
+                     generic SWD debug tools (scripts/debug/)
+```
+
+How it fits together: the build compiles the engine out of `rp2040-doom/`
+against `src/gnw/` and links it twice (1 MB apart); `gen_reloc_table.py` diffs
+the two images to derive the exact absolute-pointer relocation table, which is
+appended to the blob behind the `.reloc_hdr`. The firmware finds the blob on
+external flash by header magic, relocates it in place to its install address,
+and jumps in; the blob resolves every firmware service at runtime through the
+`gw_firmware_abi_t` table at VTOR+0x400 — no link-time coupling in either
+direction. Replacing the test firmware with real retro-go is a consumer-side
+change only (see the toolkit README).
 
 ## License
 
-Build glue and the template are MIT (see `LICENSE`). Vendored files under
-`sdk/include/` keep their upstream licenses (firmware / HAL / FatFs / etc.).
+This project is licensed under **GPLv2**. The shareware WAD remains the
+property of id Software and is distributed under its original shareware terms.
