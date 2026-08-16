@@ -1,0 +1,10 @@
+**/build/
+*.bin
+*.elf
+*.map
+*.o
+*.d
+*.su
+*.lst
+.DS_Store
+__pycache__/
