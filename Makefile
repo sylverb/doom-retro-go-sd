@@ -23,7 +23,7 @@ FORCE: ;
 GNW_CORE_SDK ?= sdk
 PACK_CORE := $(GNW_CORE_SDK)/tools/pack_core.py
 PACKED_BIN := doom.bin
-HEADER_LOGO := assets/header.png
+HEADER_LOGO := assets/header.bmp
 
 # CI / stage_release.py metadata (this tree is a CORE only).
 PROJECT_KIND := core
@@ -373,6 +373,7 @@ $(PACKED_BIN): $(OUTBIN) $(BUILD)/doom.out $(HEADER_LOGO) $(PACK_CORE)
 		--core-name "Doom" \
 		--version 1.0.0 \
 		--header-logo $(HEADER_LOGO) \
+        --logo-invert \
 		--no-auto-segments \
 		--out $(PACKED_BIN)
 	@echo "== $(PACKED_BIN) → /cores/ =="
