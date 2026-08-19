@@ -23,6 +23,7 @@ FORCE: ;
 GNW_CORE_SDK ?= sdk
 PACK_CORE := $(GNW_CORE_SDK)/tools/pack_core.py
 PACKED_BIN := doom.bin
+PAD_LOGO := assets/pad.png
 HEADER_LOGO := assets/header.bmp
 
 # CI / stage_release.py metadata (this tree is a CORE only).
@@ -400,13 +401,14 @@ $(OUTWHD): $(BUILD)/doom1.wad FORCE
 # do not auto-detect extra segments.
 core pack: $(PACKED_BIN)
 
-$(PACKED_BIN): $(OUTBIN) $(BUILD)/doom.out $(HEADER_LOGO) $(PACK_CORE)
+$(PACKED_BIN): $(OUTBIN) $(BUILD)/doom.out $(PAD_LOGO) $(HEADER_LOGO) $(PACK_CORE)
 	python3 $(PACK_CORE) \
 		--elf $(BUILD)/doom.out --bin $(OUTBIN) \
 		--system-name "Doom" --dirname doom \
 		--extensions "whd" \
 		--core-name "Doom" \
 		--version 1.0.0 \
+		--pad-logo $(PAD_LOGO) \
 		--header-logo $(HEADER_LOGO) \
         --logo-invert \
 		--no-auto-segments \

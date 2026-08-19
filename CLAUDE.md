@@ -28,18 +28,22 @@ Sync ABI after a firmware change: `./scripts/sync_from_firmware.sh <firmware-tre
 
 ## Memory map (STM32H7B0, SD Retro-Go)
 
-Addresses must match firmware linker scripts under `sdk/ld/`. Doom’s own
-layout is documented in `README.md` and asserted in `linker.ld`. Summary:
+`doom.bin` is a RAM overlay. The launcher copies it to `__RAM_EMU_START__`
+(`0x2404B000`) and stage-1 (`src/gnw/gwhb_entry.c`) unpacks runtime sections
+to their VMAs. WHD data stays separate (`/roms/doom/*.whd`) and is opened via
+the firmware ABI.
 
+Addresses must match firmware linker scripts under `sdk/ld/`; Doom placement is
+asserted in `linker.ld`.
 
-| Region | Approx. base | Size (usable) | Best for |
-| -------------------------- | ------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------- |
-| **ITCM** | `0x00000000` | **64 KiB** | Hot renderer (`R_Render*`, pd_render, …) |
-| **DTCM** | `0x20000000` | **~104 KiB** for cores | Fast scratch via `dtc_malloc` (no `free`) |
-| **AHB SRAM** | `0x30000000` | **~56 KiB** freeable heap | `malloc` / `ahb_malloc` only — do not link fixed segments here |
-| **AXI (LCD pool)** | `0x24000000` | **300 KiB** | Firmware-owned; LUT8 FBs 2×75 KiB, rest via `lcd_get_bonus_pool` |
-| **AXI (pcache)** | bonus pool | **~150 KiB** | Patch/texture cache (`PATCH_CACHE_BYTES`) |
-| **AXI (RAM_EMU)** | `0x2404B000` | rest of 1 MiB | Image + BSS + zone + cold `.text_axis` |
+| Region | Address / size | Used by Doom |
+| --- | --- | --- |
+| **ITCM** | `0x00000000`, 64 KiB (minus optional null-guard) | `.itcram_hot` (renderer hot paths + selected objects: `pd_render.o`, `p_map.o`, `p_enemy.o`, `p_sight.o`, `p_maputl.o`) |
+| **DTCM core window** | `0x20000000`, about 103 KiB usable by cores | `.dtcm_bss` as `NOLOAD` scratch; reserved at startup via `dtc_malloc()` |
+| **AHB SRAM** | `0x30000000` | No fixed Doom sections; use runtime allocators only (`malloc` / `ahb_malloc`) |
+| **AXI LCD pool** | `0x24000000`..`0x2404B000` | Firmware LUT8 buffers + bonus pool; patch cache placed at runtime via `lcd_get_bonus_pool()` (`PATCH_CACHE_BYTES`) |
+| **AXI RAM_EMU payload** | starts `0x2404B000` | `.core_entry`, `.data`, `.bss`, zone heap (`_zone_start.._zone_end`) |
+| **AXI cold/warm text** | `TEXT_AXIS_ORIGIN`..`0x24100000` | `.text_axis` (remaining code + rodata) |
 
 
 ### Watchdog and big clears
