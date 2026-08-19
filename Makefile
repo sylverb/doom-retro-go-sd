@@ -152,7 +152,9 @@ REDEFINE_SYMS := $(GNW_CORE_SDK)/src/gw_core_bridge_redefine_syms.txt
 BRIDGE_O := $(BUILD)/sdk/gw_core_bridge.o
 # malloc/free → zone (gnw_libc.c); memcpy/memset → fastmem.c ITCM versions.
 GW_CORE_BRIDGE_DISABLE_SDK_MALLOC ?= 1
-GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS ?= 1
+GW_CORE_BRIDGE_DISABLE_SDK_MEMCPY ?= 1
+GW_CORE_BRIDGE_DISABLE_SDK_MEMSET ?= 1
+GW_CORE_BRIDGE_DISABLE_SDK_MEMMOVE ?= 0
 
 OBJS  = $(DOOM_SRCS:%.c=$(BUILD)/doom/%.o)
 OBJS += $(SRC_SRCS:%.c=$(BUILD)/src/%.o)
@@ -317,8 +319,11 @@ $(BUILD)/src/gnw/%.o: src/gnw/%.c $(REDEFINE_SYMS)
 
 # Do not compile the bridge against src/gnw/compat (FILE=void, fake SEEK_*).
 BRIDGE_CFLAGS = $(filter-out -Isrc/gnw -Isrc/gnw/compat,$(CFLAGS)) \
+    -fno-builtin-memcpy -fno-builtin-memmove -fno-builtin-memset \
     $(if $(filter 1,$(GW_CORE_BRIDGE_DISABLE_SDK_MALLOC)),-DGW_CORE_BRIDGE_DISABLE_SDK_MALLOC=1,) \
-    $(if $(filter 1,$(GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS)),-DGW_CORE_BRIDGE_DISABLE_SDK_MEMOPS=1,)
+    $(if $(filter 1,$(GW_CORE_BRIDGE_DISABLE_SDK_MEMCPY)),-DGW_CORE_BRIDGE_DISABLE_SDK_MEMCPY=1,) \
+    $(if $(filter 1,$(GW_CORE_BRIDGE_DISABLE_SDK_MEMSET)),-DGW_CORE_BRIDGE_DISABLE_SDK_MEMSET=1,) \
+    $(if $(filter 1,$(GW_CORE_BRIDGE_DISABLE_SDK_MEMMOVE)),-DGW_CORE_BRIDGE_DISABLE_SDK_MEMMOVE=1,)
 
 $(BRIDGE_O): $(GNW_CORE_SDK)/src/gw_core_bridge.c
 	@mkdir -p $(dir $@)

@@ -36,7 +36,11 @@ CORE_EXTRA_REDEFINE_SYMS ?=
 # 1 = gw_core_bridge.c omits malloc/free/realloc/calloc (core supplies its own).
 # ahb_malloc / dtc_malloc / … are unaffected.
 GW_CORE_BRIDGE_DISABLE_SDK_MALLOC ?= 0
-# 1 = gw_core_bridge.c omits memcpy/memset/memmove/__aeabi_mem* (core supplies its own).
+# Selective exclusion for gw_core_bridge.c local memcpy/memset/memmove.
+# Back-compat: MEMOPS excludes the full memops block (including __aeabi_mem* helpers).
+GW_CORE_BRIDGE_DISABLE_SDK_MEMCPY ?= 0
+GW_CORE_BRIDGE_DISABLE_SDK_MEMSET ?= 0
+GW_CORE_BRIDGE_DISABLE_SDK_MEMMOVE ?= 0
 GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS ?= 0
 
 #######################################
@@ -160,6 +164,15 @@ $(BUILD_DIR):
 
 ifeq ($(GW_CORE_BRIDGE_DISABLE_SDK_MALLOC),1)
 $(BRIDGE_OBJECTS): CFLAGS += -DGW_CORE_BRIDGE_DISABLE_SDK_MALLOC=1
+endif
+ifeq ($(GW_CORE_BRIDGE_DISABLE_SDK_MEMCPY),1)
+$(BRIDGE_OBJECTS): CFLAGS += -DGW_CORE_BRIDGE_DISABLE_SDK_MEMCPY=1
+endif
+ifeq ($(GW_CORE_BRIDGE_DISABLE_SDK_MEMSET),1)
+$(BRIDGE_OBJECTS): CFLAGS += -DGW_CORE_BRIDGE_DISABLE_SDK_MEMSET=1
+endif
+ifeq ($(GW_CORE_BRIDGE_DISABLE_SDK_MEMMOVE),1)
+$(BRIDGE_OBJECTS): CFLAGS += -DGW_CORE_BRIDGE_DISABLE_SDK_MEMMOVE=1
 endif
 ifeq ($(GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS),1)
 $(BRIDGE_OBJECTS): CFLAGS += -DGW_CORE_BRIDGE_DISABLE_SDK_MEMOPS=1
