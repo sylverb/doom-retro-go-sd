@@ -21,7 +21,7 @@ Build: `make` or `make docker` → `doom.bin`. Convert IWADs on host:
 | `sdk/` | Vendored ABI headers, `pack_core.py`, linker fragments |
 | `src/gnw/` | G&W platform layer (video/sound/input/ABI/persist) |
 | `rp2040-doom/` | Engine submodule (Chocolate Doom / rp2040-doom fork) |
-| `linker.ld` | Doom RAM-overlay map (ITCM hot set, pcache, zone, …) |
+| `linker.ld` | Doom RAM-overlay map (ITCM hot set, zone, …) |
 | `assets/` | Pad/header logos for `pack_core.py` |
 
 Sync ABI after a firmware change: `./scripts/sync_from_firmware.sh <firmware-tree>`.
@@ -35,10 +35,10 @@ layout is documented in `README.md` and asserted in `linker.ld`. Summary:
 | Region | Approx. base | Size (usable) | Best for |
 | -------------------------- | ------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------- |
 | **ITCM** | `0x00000000` | **64 KiB** | Hot renderer (`R_Render*`, pd_render, …) |
-| **DTCM** | `0x20000000` | **~104 KiB** for cores | Fast scratch via `dtcm_malloc` (no `free`) |
+| **DTCM** | `0x20000000` | **~104 KiB** for cores | Fast scratch via `dtc_malloc` (no `free`) |
 | **AHB SRAM** | `0x30000000` | **~56 KiB** freeable heap | `malloc` / `ahb_malloc` only — do not link fixed segments here |
-| **AXI (framebuffer)** | `0x24000000` | **160 KiB** LUT8 (Doom) | Firmware-owned |
-| **AXI (.pcache)** | `0x24028000` | **~140 KiB** | Patch/texture cache |
+| **AXI (LCD pool)** | `0x24000000` | **300 KiB** | Firmware-owned; LUT8 FBs 2×75 KiB, rest via `lcd_get_bonus_pool` |
+| **AXI (pcache)** | bonus pool | **~150 KiB** | Patch/texture cache (`PATCH_CACHE_BYTES`) |
 | **AXI (RAM_EMU)** | `0x2404B000` | rest of 1 MiB | Image + BSS + zone + cold `.text_axis` |
 
 

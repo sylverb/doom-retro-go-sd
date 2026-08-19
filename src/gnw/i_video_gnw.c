@@ -2,13 +2,13 @@
 // GNW video: replaces src/pico/i_video.c.
 //
 // The RP2040 streamed RGB565 scanlines to VGA from core1; here the LTDC
-// scans a 320x240 LUT8 framebuffer (firmware symbol _frame_buffer, uncached
-// RAM_UC at 0x24000000) autonomously, so the whole display path collapses to
-// one synchronous compose per rendered frame (I_DisplayFrameReady, called by
-// pd_end_frame):
+// scans a 320x240 LUT8 framebuffer (firmware LCD pool at 0x24000000,
+// MPU-uncached over the FB footprint only) autonomously, so the whole
+// display path collapses to one synchronous compose per rendered frame
+// (I_DisplayFrameReady, called by pd_end_frame):
 //
 //   - latch display_* from next_*
-//   - palette change -> 256-entry RGB888 CLUT via ltdc_set_clut()
+//   - palette change -> 256-entry RGB888 CLUT via lcd_set_clut()
 //     (keeping upstream's WHX tint synthesis: WHX ships only PLAYPAL[0])
 //   - per source scanline: video-type base layer (double/single/wipe),
 //     vpatch overlay pass — all in 8-bit palette indices, the per-pixel
@@ -45,21 +45,6 @@
 #include "rg_data.h"   // systick_cnt + gnw_frame_buffer via the ABI table
 #include "gw_lcd.h"
 
-/* retro-go's lcd_set_clut caches only 32 entries (sized for pico8) + dark
- * twins — doom needs all 256, so push the full table straight into the LTDC
- * layer-1 CLUT (CLUTWR: index<<24 | RGB888) after letting the firmware cache
- * its 32 (keeps the overlay menu's dimming machinery coherent). Re-pushed
- * after the overlay menu returns (I_ReloadClut). */
-static void ltdc_push_clut256(const uint32_t *rgb888)
-{
-    volatile uint32_t *L1CLUTWR = (volatile uint32_t *)0x500010C4;
-    volatile uint32_t *L1CR     = (volatile uint32_t *)0x50001084;
-    volatile uint32_t *SRCR     = (volatile uint32_t *)0x50001024;
-    for (uint32_t i = 0; i < 256; i++)
-        *L1CLUTWR = (i << 24) | (rgb888[i] & 0x00FFFFFFu);
-    *L1CR |= (1u << 4);          /* CLUTEN */
-    *SRCR  = (1u << 1);          /* reload at vertical blanking */
-}
 void I_UpdateSound(void);
 void I_GetEvent(void);
 
@@ -448,7 +433,6 @@ static void new_frame_init_overlays_palette_and_wipe(void)
             }
             next_pal = -1;
             lcd_set_clut(clut, 256);
-            ltdc_push_clut256(clut);
             // 8bpp path: shared palettes hold Doom palette indices, which do
             // not change with the CLUT — refresh is still cheap, keep it.
             for (int i = 0; i < NUM_SHARED_PALETTES; i++) {
@@ -589,6 +573,7 @@ void I_DisplayFrameReady(void)
     if (display_video_type == VIDEO_TYPE_WIPE)
         TRACE_EVT(TEV_WIPE_MARK, wipe_min);
     I_UpdateSound();
+    gnw_abi()->wdog_refresh();
     lcd_swap();           // present the just-composed buffer (deferred to vblank
                           // by the firmware's _NoReload swap; pacing is in
                           // I_DisplayFrameFreedWait below)
@@ -629,9 +614,8 @@ void I_DisplayFrameFreedWait(void)
         //
         // Bounded so a stopped/reconfigured LTDC (e.g. mid mode-switch) can
         // never wedge the frame loop; ~2 refreshes' worth of polling.
-        volatile uint32_t *const LTDC_SRCR = (volatile uint32_t *)0x50001024;
         for (uint32_t guard = 4000000u;
-             guard && (*LTDC_SRCR & 0x2u);   // SRCR.VBR: reload still pending
+             guard && lcd_is_swap_pending();
              guard--) {
             I_UpdateSound();           // never let the SAI buffer starve
         }
@@ -662,6 +646,43 @@ void I_DisplayFrameFreedWait(void)
 void I_InitGraphics(void)
 {
     lcd_setup_framebuffers(LCD_MODE_LUT8);   // retro-go double-buffer (2x LUT8)
+
+    /* LUT8 frees the upper half of the 300K LCD pool; claim it for the
+     * decoded-patch cache (and, in TRACE builds, the slot pool). */
+    {
+        uint8_t *bonus = NULL;
+        size_t sz = 0;
+        uint32_t pcache_need = pd_pcache_bytes();
+        size_t need = (size_t)pcache_need;
+#if DOOMX_TRACE
+        size_t trace_need = sizeof(trace_slot_t) * (size_t)TRACE_NUM_SLOTS;
+        need += trace_need;
+#endif
+        lcd_get_bonus_pool(&bonus, &sz);
+        if (!bonus || sz < need) {
+            I_Error("lcd bonus pool too small (%u < %u)",
+                    (unsigned)sz, (unsigned)need);
+        }
+        printf("gnw-doom: pcache %p %u bytes (bonus %u)\r\n",
+               bonus, (unsigned)pcache_need, (unsigned)sz);
+        pd_pcache_place(bonus);
+        {
+            uint8_t *p = bonus;
+            size_t left = (size_t)pcache_need;
+            while (left) {
+                size_t n = left > 4096u ? 4096u : left;
+                memset(p, 0, n);
+                p += n;
+                left -= n;
+                gnw_abi()->wdog_refresh();
+            }
+        }
+#if DOOMX_TRACE
+        trace_place(bonus + pcache_need);
+        trace_init();
+#endif
+    }
+
     stbar = resolve_vpatch_handle(VPATCH_STBAR);
     (void)stbar;
     pd_init();
@@ -722,7 +743,6 @@ void I_DisplayFPSDots(boolean dots_on)
 void I_ReloadClut(void)
 {
     lcd_set_clut(I_GetClut(), 256);
-    ltdc_push_clut256(I_GetClut());
 }
 
 /* Repaint callback for the firmware's blocking menus (open_pause_menu et al.

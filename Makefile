@@ -67,8 +67,9 @@ WHDFLAGS += -raw-columns
 endif
 
 ifeq ($(TRACE),1)
-# The trace pool shares the 140K PCACHE window with the patch cache, so the two
-# trade off directly: pool = NUM_SLOTS * (16 + SLOT_EVENTS*8) bytes.
+# The trace pool shares leftover LUT8 LCD bonus with the patch cache
+# (lcd_get_bonus_pool). Both must fit in ~150K:
+#   pool = NUM_SLOTS * (16 + SLOT_EVENTS*8) bytes.
 #
 # This SKEWS RESULTS BADLY if you get it wrong. Column decoding is very
 # cache-size-sensitive: measured REGCOLS reads 4,203us at an 88K cache but
@@ -82,7 +83,7 @@ ifeq ($(TRACE),1)
 #
 #   ACCPULL (means, histogram — use this for ALL A/B work):
 #     make TRACE=1 TRACE_NUM_SLOTS=1 TRACE_SLOT_EVENTS=64 \
-#          TRACE_PATCH_CACHE_BYTES=0x22000        (136K, ~= shipping 140K)
+#          TRACE_PATCH_CACHE_BYTES=0x25000        (148K, ~= shipping 150K)
 #
 #   TRACEPULL (per-frame event detail; accepts the skew as the price):
 #     make TRACE=1 TRACE_NUM_SLOTS=3 TRACE_PATCH_CACHE_BYTES=0x16000  (88K)
@@ -144,7 +145,14 @@ endif
 
 GNW_SRCS = main_gnw.c i_video_gnw.c i_sound_gnw.c opl_gnw.c i_system_gnw.c \
     i_timer_gnw.c i_input_gnw.c flash_stub.c stubs.c i_glob.c perf_gnw.c \
-    trace_gnw.c fastmem.c retrogo_persist.c gwhb_entry.c i_saveg_gnw.c abi_stubs.c gnw_libc.c
+    trace_gnw.c fastmem.c retrogo_persist.c gwhb_entry.c i_saveg_gnw.c gnw_libc.c
+
+# SDK ABI bridge (not gw_core_entry.S — Doom keeps gwhb_entry.c + linker.ld).
+REDEFINE_SYMS := $(GNW_CORE_SDK)/src/gw_core_bridge_redefine_syms.txt
+BRIDGE_O := $(BUILD)/sdk/gw_core_bridge.o
+# malloc/free → zone (gnw_libc.c); memcpy/memset → fastmem.c ITCM versions.
+GW_CORE_BRIDGE_DISABLE_SDK_MALLOC ?= 1
+GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS ?= 1
 
 OBJS  = $(DOOM_SRCS:%.c=$(BUILD)/doom/%.o)
 OBJS += $(SRC_SRCS:%.c=$(BUILD)/src/%.o)
@@ -152,6 +160,7 @@ OBJS += $(OPL_SRCS:%.c=$(BUILD)/opl/%.o)
 OBJS += $(GNW_SRCS:%.c=$(BUILD)/src/gnw/%.o)
 OBJS += $(BUILD)/src/pd_render.o
 OBJS += $(OBJS_SLOT_RENDER)
+OBJS += $(BRIDGE_O)
 
 # --- flags -------------------------------------------------------------------------
 # compat/ first: freestanding stdio/stdlib shims for the engine.
@@ -230,7 +239,7 @@ DEFS_GNW = -DPICO_ON_DEVICE=1 -DPICO_BUILD=1 -DNO_USE_MOUSE=1 \
     -DDOOMX=1 -DDOOMX_SINGLE_CORE=1 -DDOOM_WIDE_PTRS=1 \
     -DDOOM_SAVE_SLOTS=3 -DDOOM_SAVE_AUTONAME=1 \
     -DEXTFLASH_OFFSET=$(EXTFLASH_OFFSET) \
-    -DDOOMX_RUNTIME_WHD=1 -DDOOMX_PCACHE_SECTION=1 -DPATCH_CACHE_BYTES=0x23000
+    -DDOOMX_RUNTIME_WHD=1 -DDOOMX_PCACHE_SECTION=1 -DPATCH_CACHE_BYTES=0x25800
 
 # EXTRA_DEFS: ad-hoc defines for A/B experiments, e.g.
 #   make TRACE=1 EXTRA_DEFS=-DDOOMX_NO_DTCM_TABLES=1
@@ -268,31 +277,52 @@ CFLAGS = $(COMMON_FLAGS) -std=gnu11
 CXXFLAGS = $(COMMON_FLAGS) -std=gnu++17 -fno-exceptions -fno-rtti \
     -fno-threadsafe-statics -fno-use-cxa-atexit
 
-$(BUILD)/doom/%.o: $(ENGINE)/src/doom/%.c
+# Every core .o except the bridge is rewritten so fopen/lcd_swap/malloc/...
+# become core_* and resolve against gw_core_bridge.c trampolines.
+define DOOM_REDEFINE
+	$(OBJCOPY) --redefine-syms=$(REDEFINE_SYMS) $@
+endef
+
+$(BUILD)/doom/%.o: $(ENGINE)/src/doom/%.c $(REDEFINE_SYMS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+	$(DOOM_REDEFINE)
 
-$(BUILD)/src/%.o: $(ENGINE)/src/%.c
+$(BUILD)/src/%.o: $(ENGINE)/src/%.c $(REDEFINE_SYMS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+	$(DOOM_REDEFINE)
 
-$(BUILD)/src/pd_render.o: $(ENGINE)/src/pd_render.cpp
+$(BUILD)/src/pd_render.o: $(ENGINE)/src/pd_render.cpp $(REDEFINE_SYMS)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(DOOM_REDEFINE)
 
-$(BUILD)/opl/%.o: $(ENGINE)/opl/%.c
+$(BUILD)/opl/%.o: $(ENGINE)/opl/%.c $(REDEFINE_SYMS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+	$(DOOM_REDEFINE)
 
 # slot_render.cpp is upstream's alternative slot renderer (EMU8950_SLOT_RENDER).
 # It is C++, hence its own rule rather than the .c pattern above.
-$(BUILD)/opl/slot_render.o: $(ENGINE)/opl/slot_render.cpp
+$(BUILD)/opl/slot_render.o: $(ENGINE)/opl/slot_render.cpp $(REDEFINE_SYMS)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(DOOM_REDEFINE)
 
-$(BUILD)/src/gnw/%.o: src/gnw/%.c
+$(BUILD)/src/gnw/%.o: src/gnw/%.c $(REDEFINE_SYMS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+	$(DOOM_REDEFINE)
+
+# Do not compile the bridge against src/gnw/compat (FILE=void, fake SEEK_*).
+BRIDGE_CFLAGS = $(filter-out -Isrc/gnw -Isrc/gnw/compat,$(CFLAGS)) \
+    $(if $(filter 1,$(GW_CORE_BRIDGE_DISABLE_SDK_MALLOC)),-DGW_CORE_BRIDGE_DISABLE_SDK_MALLOC=1,) \
+    $(if $(filter 1,$(GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS)),-DGW_CORE_BRIDGE_DISABLE_SDK_MEMOPS=1,)
+
+$(BRIDGE_O): $(GNW_CORE_SDK)/src/gw_core_bridge.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BRIDGE_CFLAGS) -c $< -o $@
 
 # GNW_NAME no longer baked into objects.
 $(BUILD)/src/gnw/main_gnw.o: | $(BUILD)/.dir
@@ -523,8 +553,10 @@ docker: docker_pull
 	$(V)$(DOCKER_RUN) make --no-print-directory -j$$(nproc) all
 
 docker_pull:
-	$(V)$(ECHO) "[ PULL ]" $(DOCKER_IMAGE)
-	$(V)docker pull $(DOCKER_IMAGE)
+	$(V)if ! docker image inspect $(DOCKER_IMAGE) >/dev/null 2>&1; then \
+		$(ECHO) "[ PULL ]" $(DOCKER_IMAGE); \
+		docker pull $(DOCKER_IMAGE); \
+	fi
 
 docker_shell: docker_pull
 	$(DOCKER_RUN) bash

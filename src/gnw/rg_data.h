@@ -1,10 +1,10 @@
 //
 // rg_data.h — route firmware DATA symbols through the ABI table.
 //
-// Functions resolve via abi_stubs.c, but data (the firmware's free-running counter
-// and its LUT8 framebuffer) can't be wrapped — so expose them as macros that read
-// the pointers the firmware published in g_firmware_abi. Include this (and drop the
-// old `extern ... systick_cnt;` decl) wherever the firmware counter is read.
+// Functions resolve via the SDK bridge (objcopy --redefine-syms). Data (the
+// firmware's free-running counter) can't be wrapped that way — so expose it
+// as a macro that reads HAL_GetTick through the ABI table. Include this
+// (and drop the old `extern ... systick_cnt;` decl) wherever the counter is read.
 //
 #ifndef RG_DATA_H
 #define RG_DATA_H

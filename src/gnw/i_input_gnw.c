@@ -24,6 +24,7 @@
 #include "d_event.h"
 #include "i_input.h"
 #include "rg_data.h"    // systick_cnt (HAL_GetTick) for tap-vs-hold timing
+#include "rg_abi.h"
 #include "odroid_input.h"
 #include "common.h"
 
@@ -87,6 +88,7 @@ void I_GetEvent(void)
     // firmware owns the power button / standby (input.c). Save/load is likewise
     // firmware-triggered via the handlers we register (odroid_system_emu_init).
     odroid_gamepad_state_t js;
+    gnw_abi()->wdog_refresh();
     odroid_input_read_gamepad(&js);
 
     /* Hand the raw state to retro-go's standard in-game loop FIRST: it owns
@@ -148,23 +150,21 @@ void I_GetEvent(void)
         synth_pause = 0;
     }
 
-    extern const uint32_t *I_GetClut(void);
-    extern void lcd_set_clut(const uint32_t *clut, uint16_t count);
     extern void audio_clear_active_buffer(void);
     extern void audio_clear_inactive_buffer(void);
     extern void I_SoundResync(void);
     /* The firmware UX is edge-driven around the BLOCKING call below: the menu
      * opens INSIDE common_emu_input_loop on the poll where the button is
-     * RELEASED. So: on press, hand the firmware its expected CLUT layout (its
-     * dialogs use the 32-color cache + dark twins + overlay slots); on the
-     * release poll, silence the DMA ring BEFORE the call (the menu would loop
-     * whatever was mixed while the button was held) and restore doom's
-     * palette + sound pacing AFTER it returns. */
+     * RELEASED. So: on press, refresh lcd_set_clut so overlay nearest-match
+     * sees the full 256-entry PLAYPAL (menu colors overwrite cart[64..]
+     * while the dialog is up); on the release poll, silence the DMA ring
+     * BEFORE the call (the menu would loop whatever was mixed while the
+     * button was held) and restore doom's palette + sound pacing AFTER. */
     static int fw_ui_active;
     int fw_btn = js.values[ODROID_INPUT_VOLUME] || js.values[ODROID_INPUT_POWER];
     if (fw_btn && !fw_ui_active) {
         fw_ui_active = 1;
-        lcd_set_clut(I_GetClut(), 256);
+        I_ReloadClut();
     }
     if (!fw_btn && fw_ui_active) {
         audio_clear_active_buffer();

@@ -6,17 +6,19 @@
  * The WHD is a separate /roms/doom/*.whd selected via ACTIVE_FILE.
  *
  * Firmware memory model (SD Retro-Go, post-AHB-heap move):
- *   DTCM  — stack (~24 KiB + redzone at top) + ~104 KiB dtcm_malloc bump.
+ *   DTCM  — stack (~24 KiB + redzone at top) + ~104 KiB dtc_malloc bump.
  *           Doom's former "DTCM scratch" (.dtcm_bss) lives here as NOLOAD;
- *           doom_start reserves the span via dtcm_malloc so the bump stays coherent.
+ *           doom_start reserves the span via dtc_malloc so the bump stays coherent.
  *   AHB   — firmware .persistent / .data / .bss / newlib malloc heap / .audio.
  *           Cores must NOT link fixed segments here (ahb_malloc → malloc only).
  *   ITCM  — app hot code (pack_core ITCM segment / stage-1 copy).
- *   AXI   — framebuffers, pcache, RAM_EMU image + .bss/zone, cold .text_axis.
+ *   AXI   — framebuffers (firmware LCD pool), RAM_EMU image + .bss/zone,
+ *           cold .text_axis. LUT8 leftover is claimed at runtime via
+ *           lcd_get_bonus_pool() for the patch cache (not a linker region).
  *
  * AXISRAM map (1024K @ 0x24000000):
- *   0x24000000  160K  two 75K LUT8 framebuffers (MPU-uncached)
- *   0x24028000  140K  .pcache       patch_cache_buf (PATCH_CACHE_BYTES=0x23000)
+ *   0x24000000  300K  firmware LCD pool (LUT8: 2×75K FB + ~150K bonus)
+ *   0x24025800        bonus → patch cache (PATCH_CACHE_BYTES=0x25800)
  *   0x2404B000        .gwhb         image load address (stage-1)
  *   0x2404B000..7FF   .core_entry   stage-1 + durable ACTIVE_FILE snapshot
  *   0x2404B800        .data + .bss  (LMA overlaps BY DESIGN; zero .bss after copy)
@@ -39,11 +41,8 @@ MEMORY {
     /* +0x100: tolerate the firmware's optional null-pointer-guard MPU region
      * (__NULLPTR_LENGTH__ up to 256B) at the bottom of ITCM. */
     ITCMRAM (rwx) : ORIGIN = 0x00000100, LENGTH = 64K - 0x100
-    /* Real DTCM bump window (firmware dtcm_malloc). NOLOAD only — never packed. */
+    /* Real DTCM bump window (firmware dtc_malloc). NOLOAD only — never packed. */
     DTCMAPP (rw)  : ORIGIN = 0x20000000, LENGTH = DTCM_CORE_LENGTH
-    /* 160K: two 75K LUT8 framebuffers (retro-go double-buffer), MPU-uncached. */
-    RAM_UC  (rwx) : ORIGIN = 0x24000000, LENGTH = 160K
-    PCACHE  (rw)  : ORIGIN = 0x24028000, LENGTH = 0x23000
     /* Image load region: VMA of .gwhb AND the LMA chain of every copied
      * section. Length caps the image so stage-1 copy destinations
      * (TEXT_AXIS_ORIGIN and up) can never overlap the source image. */
@@ -60,7 +59,8 @@ SECTIONS {
         KEEP(*gwhb_entry.o(.gwhb_entry))
         *gwhb_entry.o(.text*)
         *gwhb_entry.o(.rodata*)
-        KEEP(*(.core_abi_meta))
+        /* pack_core.py reads GW_CORE_BUILT_ABI_* here (VMA == LMA in BLOB). */
+        KEEP(*(.gw_core_bridge_probe))
         KEEP(*(.core_romfile))
         . = ALIGN(4);
     } > BLOB
@@ -99,8 +99,8 @@ SECTIONS {
     ASSERT(__itcram_hot_end__ <= ORIGIN(ITCMRAM) + LENGTH(ITCMRAM),
            "ITCM overflow: shrink the .itcram_hot object list")
 
-    /* ============== DTCM: render/audio scratch (dtcm_malloc pool) ==============
-     * NOLOAD — not in the packed image. doom_start must dtcm_malloc() this
+    /* ============== DTCM: render/audio scratch (dtc_malloc pool) ==============
+     * NOLOAD — not in the packed image. doom_start must dtc_malloc() this
      * span so the firmware bump does not reuse it. */
     .dtcm_bss (NOLOAD) : {
         . = ALIGN(4);
@@ -113,23 +113,6 @@ SECTIONS {
            "DTCM .dtcm_bss overflow: shrink DOOMX_DTCM_BSS scratch")
 
     /* ============== AXISRAM ============== */
-
-    /* patch_cache_buf (pd_render.cpp, DOOMX_PCACHE_SECTION) exactly fills the
-     * gap between the framebuffers and the image load address. */
-    .pcache (NOLOAD) : {
-        _pcache_start = .;
-        *(.pcache)
-        _pcache_end = .;
-    } > PCACHE
-
-    /* Pipeline trace slot pool (TRACE=1 only; zero-size otherwise). */
-    .trace_buf (NOLOAD) : {
-        . = ALIGN(8);
-        *(.trace_buf)
-        . = ALIGN(8);
-    } > PCACHE
-    ASSERT(SIZEOF(.pcache) + SIZEOF(.trace_buf) <= LENGTH(PCACHE),
-           "patch cache + trace pool exceed the PCACHE window: lower PATCH_CACHE_BYTES or TRACE_NUM_SLOTS")
 
     /* Initialized data in RAM_EMU (was wrongly linked into AHB). */
     .data : {
@@ -193,9 +176,11 @@ SECTIONS {
     _zone_start = _doom_bss_vma_end;
     _zone_end = TEXT_AXIS_ORIGIN;
     ASSERT(_zone_end - _zone_start >= ZONE_MIN,
-           "zone heap below ZONE_MIN: shrink PATCH_CACHE_BYTES / trace ring, or raise TEXT_AXIS_ORIGIN")
+           "zone heap below ZONE_MIN: raise TEXT_AXIS_ORIGIN or shrink .bss")
 
     /DISCARD/ : {
         *(.ARM.exidx*) *(.ARM.extab*)
+        /* No gw_core_entry.S — constructors (e.g. _impure_ptr) never run. */
+        *(.init_array*) *(.fini_array*) *(.ctors) *(.dtors)
     }
 }

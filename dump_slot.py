@@ -16,6 +16,8 @@ SLOT_BYTES = 16 + 2048 * 8
 b = OpenOCDBackend()
 b.open()
 b.halt()
+if pool_size is not None and pool_size <= 8:
+    pool_addr = struct.unpack("<I", b.read_memory(pool_addr, 4))[0]
 raw = b.read_memory(pool_addr + SLOT_BYTES * 1, SLOT_BYTES)
 b.resume()
 b.close()

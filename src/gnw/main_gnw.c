@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #include "rg_abi.h"
-#include "trace_gnw.h"
+#include "gw_malloc.h"
 #include "pico/i_picosound.h"
 #include "odroid_overlay.h"
 
@@ -17,38 +17,31 @@
 #define GNW_APPID_DOOM 30
 
 extern unsigned long _doom_bss_vma_start, _doom_bss_vma_end,
-    _dtcm_bss_start, _dtcm_bss_end,
-    _pcache_start, _pcache_end;
+    _dtcm_bss_start, _dtcm_bss_end;
 
 extern const uint8_t *whd_map_base;
 
 extern void D_DoomMain(void);
 extern void I_Init(void);
 
-extern void dtcm_init(void);
-extern void *dtcm_malloc(unsigned long size);
-
 static void doom_sram_init(void)
 {
     unsigned long *dst = &_doom_bss_vma_start;
     while (dst < &_doom_bss_vma_end)
         *dst++ = 0;
-
-    dst = &_pcache_start;
-    while (dst < &_pcache_end)
-        *dst++ = 0;
 }
 
-/* .dtcm_bss is linked at DTCM ORIGIN (NOLOAD). Reserve it in the firmware
- * bump so later dtcm_malloc calls do not overlap, then zero. */
+/* .dtcm_bss is linked at DTCM ORIGIN (NOLOAD). Firmware already dtc_init()s
+ * before jumping here; re-init + dtc_malloc the span so later firmware
+ * dtc_malloc (pause overlay, etc.) does not overlap, then zero. */
 static int doom_dtcm_reserve(void)
 {
     size_t n = (size_t)((uintptr_t)&_dtcm_bss_end - (uintptr_t)&_dtcm_bss_start);
     void *want = (void *)&_dtcm_bss_start;
     void *got;
 
-    dtcm_init();
-    got = dtcm_malloc(n);
+    dtc_init();
+    got = dtc_malloc(n);
     if (got != want) {
         printf("gnw-doom: DTCM reserve failed (got %p want %p, %lu bytes)\r\n",
                got, want, (unsigned long)n);
@@ -76,7 +69,6 @@ void doom_start(uint8_t load_state, uint8_t start_paused, int8_t save_slot,
     if (doom_dtcm_reserve() != 0)
         return;
 
-    trace_init();
     printf("gnw-doom: core multi-WHD\r\n");
 
     if (!whd_path || !whd_path[0]) {

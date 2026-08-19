@@ -41,6 +41,13 @@ def sym(name):
     raise SystemExit(f"symbol {name} not found — TRACE=1 build flashed?")
 
 pool_addr, pool_size = sym("trace_slots")
+# Runtime pointer into LCD bonus: nm size is 4. Prefer trace_pool_len.
+try:
+    len_addr, _ = sym("trace_pool_len")
+except SystemExit:
+    len_addr = None
+if pool_size is not None and pool_size <= 8:
+    pool_size = None                     # not an array; resolve below
 if pool_size:                            # cross-check geometry against the ELF
     derived = pool_size // SLOT_BYTES
     if derived and derived != NUM_SLOTS:
@@ -54,6 +61,13 @@ if os.path.exists("trace_slots.bin"):
 else:
     b = OpenOCDBackend(); b.open()
     b.halt()
+    if pool_size is None:
+        pool_addr = struct.unpack("<I", b.read_memory(pool_addr, 4))[0]
+        if len_addr:
+            pool_len = struct.unpack("<I", b.read_memory(len_addr, 4))[0]
+            derived = pool_len // SLOT_BYTES
+            if derived:
+                NUM_SLOTS = derived
     raw = b.read_memory(pool_addr, NUM_SLOTS * SLOT_BYTES)
     b.resume(); b.close()
 

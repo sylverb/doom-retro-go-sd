@@ -78,7 +78,7 @@ object lists in `linker.ld`, `PATCH_CACHE_BYTES` and `TEXT_AXIS_ORIGIN`.
            │ fw .data + .bss                  ~16.6K     │  logbuf, HAL state…
 0x200040C0 ├────────────────────────────────────────────┤
            │ fw malloc heap                      85K     │  FatFS/LFS/dialogs;
-           │                                             │  (apps: dtcm_malloc)
+           │                                             │  (apps: dtc_malloc)
 0x200194C0 ├────────────────────────────────────────────┤
            │ padding / redzone (256 B)         ~6.9K     │  MPU region 2 guard
 0x2001B000 ├────────────────────────────────────────────┤

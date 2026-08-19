@@ -5,13 +5,13 @@
 
 #if DOOMX_TRACE
 
-// The slot pool lives in .trace_buf (linker carves it from AXISRAM; TRACE
-// builds relax ZONE_MIN in linker.ld to make room — gameplay zone use is far
-// below the release floor). There is no separate scratch frame: the
-// in-progress frame writes straight into trace_stage, and the boundary
-// decides whether to commit (advance to a fresh staging slot) or discard
-// (reset the same slot and reuse it for the next frame).
-__attribute__((section(".trace_buf"))) trace_slot_t trace_slots[TRACE_NUM_SLOTS];
+// The slot pool lives in leftover LUT8 LCD bonus after the patch cache
+// (see I_InitGraphics / lcd_get_bonus_pool). There is no separate scratch
+// frame: the in-progress frame writes straight into trace_stage, and the
+// boundary decides whether to commit (advance to a fresh staging slot) or
+// discard (reset the same slot and reuse it for the next frame).
+trace_slot_t *trace_slots;
+uint32_t trace_pool_len = sizeof(trace_slot_t) * TRACE_NUM_SLOTS;
 volatile uint32_t trace_stage;          // slot the current frame fills
 
 // Free-running aggregates (see trace_gnw.h). Deliberately NOT in .trace_buf:
@@ -210,11 +210,19 @@ void trace_frame_boundary(uint32_t cyc)
     s_stage_start = cyc ? cyc : 1u;
 }
 
+void trace_place(void *pool)
+{
+    trace_slots = (trace_slot_t *)pool;
+}
+
 void trace_init(void)
 {
     // Enable DWT cycle counter: DEMCR.TRCENA then DWT_CTRL.CYCCNTENA.
     *(volatile uint32_t *)0xE000EDFC |= (1u << 24);
     *(volatile uint32_t *)0xE0001000 |= 1u;
+
+    if (!trace_slots)
+        return;
 
     for (uint32_t i = 0; i < TRACE_NUM_SLOTS; i++) {
         trace_slots[i].count = 0;

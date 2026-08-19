@@ -139,11 +139,3 @@ boolean I_GetMemoryValue(unsigned int offset, void *value, int size)
     memset(value, 0, size);
     return true;
 }
-
-// newlib assert() lands here; asserts stay enabled for bring-up (PD_SANITY).
-void __assert_func(const char *file, int line, const char *func, const char *expr)
-{
-    printf("\nASSERT %s:%d (%s): %s\n", file, line, func ? func : "?", expr);
-    __asm__ volatile ("bkpt #0");
-    for (;;) {}
-}

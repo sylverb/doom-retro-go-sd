@@ -78,9 +78,12 @@ typedef struct {
 } trace_slot_t;
 
 // The slot pool + the index of the slot the in-progress frame writes into.
-extern trace_slot_t trace_slots[TRACE_NUM_SLOTS];
+// trace_slots is a pointer into leftover LCD bonus (see trace_place).
+extern trace_slot_t *trace_slots;
+extern uint32_t trace_pool_len;
 extern volatile uint32_t trace_stage;   // staging slot index
 
+void trace_place(void *pool);
 void trace_init(void);
 
 /* ---- Free-running aggregate counters (A/B measurement) ------------------

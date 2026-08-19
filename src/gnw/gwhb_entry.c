@@ -118,9 +118,3 @@ void app_main_doom(uint8_t load_state, uint8_t start_paused, int8_t save_slot)
             gnw_abi()->wdog_refresh();
     }
 }
-
-/* pack_core.py reads these from the RAM_EMU payload (VMA == LMA in BLOB). */
-__attribute__((section(".core_abi_meta"), used))
-const uint32_t GW_CORE_BUILT_ABI_VERSION = GNW_FIRMWARE_ABI_VERSION;
-__attribute__((section(".core_abi_meta"), used))
-const uint32_t GW_CORE_BUILT_ABI_SIZE = (uint32_t)sizeof(gnw_firmware_abi_t);

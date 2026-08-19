@@ -33,6 +33,11 @@ BUILD_DIR ?= build
 CORE_LDSCRIPT ?= $(GNW_CORE_SDK)/ld/core_ram_emu.ld
 CORE_ASFLAGS ?=
 CORE_EXTRA_REDEFINE_SYMS ?=
+# 1 = gw_core_bridge.c omits malloc/free/realloc/calloc (core supplies its own).
+# ahb_malloc / dtc_malloc / … are unaffected.
+GW_CORE_BRIDGE_DISABLE_SDK_MALLOC ?= 0
+# 1 = gw_core_bridge.c omits memcpy/memset/memmove/__aeabi_mem* (core supplies its own).
+GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS ?= 0
 
 #######################################
 # toolchain
@@ -153,7 +158,12 @@ all: $(TARGET_BIN) $(CORE_EXTRA_SEGMENT_BINS)
 $(BUILD_DIR):
 	$(V)mkdir -p $(BUILD_DIR)
 
-$(BRIDGE_OBJECTS): CFLAGS += -fno-builtin-memcpy -fno-builtin-memmove -fno-builtin-memset
+ifeq ($(GW_CORE_BRIDGE_DISABLE_SDK_MALLOC),1)
+$(BRIDGE_OBJECTS): CFLAGS += -DGW_CORE_BRIDGE_DISABLE_SDK_MALLOC=1
+endif
+ifeq ($(GW_CORE_BRIDGE_DISABLE_SDK_MEMOPS),1)
+$(BRIDGE_OBJECTS): CFLAGS += -DGW_CORE_BRIDGE_DISABLE_SDK_MEMOPS=1
+endif
 
 $(BUILD_DIR)/%.o: %.c $(REDEFINE_SYMS_FILE) | $(BUILD_DIR)
 	$(V)$(ECHO) [ CC ] $(notdir $<)

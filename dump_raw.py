@@ -20,6 +20,8 @@ SLOT_BYTES = SLOT_HDR + SLOT_EVENTS * 8
 b = OpenOCDBackend()
 b.open()
 b.halt()
+if pool_size is not None and pool_size <= 8:
+    pool_addr = struct.unpack("<I", b.read_memory(pool_addr, 4))[0]
 raw = b.read_memory(pool_addr, NUM_SLOTS * SLOT_BYTES)
 trace_stage = struct.unpack("<I", b.read_memory(sym("trace_stage")[0], 4))[0]
 b.resume()

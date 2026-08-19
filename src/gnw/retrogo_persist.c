@@ -9,7 +9,7 @@
 //   1. .data                 (_doom_data_vma_start .. _doom_data_vma_end)
 //   2. scratch .dtcm_bss     (_dtcm_bss_start      .. _dtcm_bss_end)
 //   3. AXISRAM .bss + zone   (_doom_bss_vma_start  .. _zone_end)
-//   4. .pcache               (_pcache_start        .. _pcache_end)
+//   4. patch cache           (lcd_get_bonus_pool, PATCH_CACHE_BYTES)
 // The patch cache MUST ride along: its index (pcache_lump_offset, rover,
 // block bookkeeping) lives in the zone — restoring the index without the
 // cache contents walks inconsistent block headers (watchdog crash on the
@@ -53,12 +53,11 @@ uint32_t g_doom_time_bias;
 extern unsigned long _doom_data_vma_start, _doom_data_vma_end;
 extern unsigned long _dtcm_bss_start, _dtcm_bss_end;
 extern unsigned long _doom_bss_vma_start, _zone_end;
-extern unsigned long _pcache_start, _pcache_end;
+extern uint8_t *pd_pcache_buf(void);
+extern uint32_t pd_pcache_bytes(void);
 
-// CLUT re-push after a restore (i_video_gnw.c owns the table; lcd_set_clut is
-// the ABI-routed firmware service).
-extern const uint32_t *I_GetClut(void);
-extern void lcd_set_clut(const uint32_t *clut, uint16_t count);
+// CLUT re-push after a restore (i_video_gnw.c owns the table).
+extern void I_ReloadClut(void);
 extern void audio_clear_active_buffer(void);
 extern void audio_clear_inactive_buffer(void);
 
@@ -118,8 +117,8 @@ static void regions_fill(state_hdr_t *h)
     h->region[1].len  = (uint32_t)&_dtcm_bss_end - (uint32_t)&_dtcm_bss_start;
     h->region[2].addr = (uint32_t)&_doom_bss_vma_start;
     h->region[2].len  = (uint32_t)&_zone_end - (uint32_t)&_doom_bss_vma_start;
-    h->region[3].addr = (uint32_t)&_pcache_start;
-    h->region[3].len  = (uint32_t)&_pcache_end - (uint32_t)&_pcache_start;
+    h->region[3].addr = (uint32_t)(uintptr_t)pd_pcache_buf();
+    h->region[3].len  = pd_pcache_bytes();
 }
 
 static void hud_msg(const char *s)
@@ -265,7 +264,7 @@ static void state_load(const char *path)
     // snapshot's timestamp (overwrites the bias value the restore brought in).
     g_doom_time_bias = got.systick_ms - gnw_abi()->HAL_GetTick();
 
-    lcd_set_clut(I_GetClut(), 256);   // restored palette -> panel
+    I_ReloadClut();   // restored palette -> panel
     printf("gnw-doom state: load %s ok\n", path);
     hud_msg("State loaded.");
 }

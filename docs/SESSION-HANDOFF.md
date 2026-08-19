@@ -70,7 +70,7 @@ was added, and the perf ceiling was characterized. Default is **60 Hz @ 60 uniqu
 - **60fps present cap**: gnw-doom `d1faadd` (a post-swap VBR-completion gate; removing it
   free-ran to 160fps).
 - **Toolkit ABI conformance** (`948a260`): populated NULL ABI slots that were hard-faulting
-  doom (audio_clear_*, odroid_system_emu_load_state, vprintf, dtcm_malloc), removed libc
+  doom (audio_clear_*, odroid_system_emu_load_state, vprintf, dtc_malloc), removed libc
   `while(1)` trap stubs that hid working code (strchr/strrchr/strdup), overclock 353→340MHz
   to match retro-go, added a global VOLUME slider.
 - **ADC hang fix** (toolkit `be34c60`): `board_get_battery_raw` had an unbounded EOC poll;
@@ -268,6 +268,6 @@ Plus: fixed-address `.bss` block for ELF-free SWD reads (do after the CLUT/green
 
 ## Memory-layout facts (for any future RAM work)
 ITCM 93.9% full (~3.9K free) — hot code incl. the OPL core already there. AHB app window 90.8%.
-AXI .text_axis 92.3%. DTCM ~85-105K FREE but the toolkit ABI's `dtcm_malloc` is now populated
+AXI .text_axis 92.3%. DTCM ~85-105K FREE but the toolkit ABI's `dtc_malloc` is now populated
 (was NULL). GWHB image is a RAM overlay at 0x2404B000. `itc_malloc`/`ram_malloc`/`lcd_get_bonus_pool`
 were NULL in the toolkit historically — check before relying on any allocator.

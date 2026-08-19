@@ -23,7 +23,7 @@ static inline int isxdigit(int c)
     return isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
 
-/* ABI-backed in abi_stubs.c when linked; declare for headers that need them. */
+/* ABI-backed via the SDK bridge (objcopy --redefine-syms). */
 int tolower(int c);
 int toupper(int c);
 

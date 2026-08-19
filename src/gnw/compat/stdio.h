@@ -1,5 +1,5 @@
 #pragma once
-/* Freestanding stdio shim for gnw-doom (ABI-backed I/O via abi_stubs.c). */
+/* Freestanding stdio shim for gnw-doom (ABI-backed I/O via the SDK bridge). */
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -8,7 +8,6 @@
 extern "C" {
 #endif
 
-void putchar_(char c);
 void printf(const char *fmt, ...);
 void vprintf(const char *fmt, va_list arg);
 int snprintf(char *dst, unsigned long size, const char *fmt, ...);
@@ -22,8 +21,6 @@ int sscanf(const char *str, const char *format, ...);
 #define FILE void
 #define stdout NULL
 #define stderr NULL
-#define SEEK_END 0
-#define SEEK_SET 0
 
 FILE *fopen(const char *filename, const char *mode);
 int fclose(FILE *fp);
